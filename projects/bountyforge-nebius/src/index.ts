@@ -1,6 +1,7 @@
 import OpenAI from 'openai';
 import { resolve } from 'node:path';
 import { collectRepositoryContext } from './context.js';
+import { verifyPlan } from './verify.js';
 
 const apiKey = process.env.NEBIUS_API_KEY;
 if (!apiKey) {
@@ -54,10 +55,18 @@ const response = await client.chat.completions.create({
 const content = response.choices[0]?.message?.content;
 if (!content) throw new Error('Nebius returned an empty response');
 
-const parsed = JSON.parse(content);
+const plan = JSON.parse(content);
+const verification = await verifyPlan(client, model, issue, repositoryContext, plan);
+
 console.log(JSON.stringify({
   provider: 'Nebius Token Factory',
   model,
   repositoryContextIncluded: Boolean(repoPath),
-  plan: parsed,
+  plan,
+  verification,
+  readyForExecution: verification.verdict === 'pass',
 }, null, 2));
+
+if (verification.verdict !== 'pass') {
+  process.exitCode = 2;
+}
