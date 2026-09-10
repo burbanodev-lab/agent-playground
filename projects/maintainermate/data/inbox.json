@@ -1,0 +1,16 @@
+[
+  {
+    "id": "T-1001",
+    "subject": "Production checkout fails after deploy",
+    "body": "Customers report that checkout returns HTTP 500 after today's deploy. Orders are blocked. No evidence of data loss has been reported.",
+    "customer": "Example Customer",
+    "severity": "high"
+  },
+  {
+    "id": "T-1002",
+    "subject": "Documentation typo in onboarding",
+    "body": "The setup guide references an old command. Please update the wording when convenient.",
+    "customer": "Community User",
+    "severity": "low"
+  }
+]
