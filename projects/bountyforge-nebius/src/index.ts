@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { collectRepositoryContext } from './context.js';
 import { verifyPlan } from './verify.js';
 import { validateRepository } from './validation.js';
+import { createIsolatedWorkspace } from './workspace.js';
 
 const apiKey = process.env.NEBIUS_API_KEY;
 if (!apiKey) {
@@ -59,9 +60,18 @@ if (!content) throw new Error('Nebius returned an empty response');
 
 const plan = JSON.parse(content);
 const verification = await verifyPlan(client, model, issue, repositoryContext, plan);
-const validation = resolvedRepoPath && verification.verdict === 'pass'
-  ? await validateRepository(resolvedRepoPath)
-  : null;
+
+let validation = null;
+let validationWorkspaceIsolated = false;
+if (resolvedRepoPath && verification.verdict === 'pass') {
+  const workspace = await createIsolatedWorkspace(resolvedRepoPath);
+  try {
+    validationWorkspaceIsolated = true;
+    validation = await validateRepository(workspace.repository);
+  } finally {
+    await workspace.cleanup();
+  }
+}
 
 const readyForExecution = verification.verdict === 'pass';
 const repositoryValidated = validation?.passed ?? false;
@@ -73,6 +83,7 @@ console.log(JSON.stringify({
   plan,
   verification,
   validation,
+  validationWorkspaceIsolated,
   readyForExecution,
   repositoryValidated,
 }, null, 2));
