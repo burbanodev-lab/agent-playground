@@ -2,6 +2,7 @@ import OpenAI from 'openai';
 import { resolve } from 'node:path';
 import { collectRepositoryContext } from './context.js';
 import { verifyPlan } from './verify.js';
+import { validateRepository } from './validation.js';
 
 const apiKey = process.env.NEBIUS_API_KEY;
 if (!apiKey) {
@@ -22,8 +23,9 @@ if (!issue) {
   throw new Error('Pass a software issue description; optionally add --repo <path>');
 }
 
-const repositoryContext = repoPath
-  ? await collectRepositoryContext(resolve(repoPath))
+const resolvedRepoPath = repoPath ? resolve(repoPath) : undefined;
+const repositoryContext = resolvedRepoPath
+  ? await collectRepositoryContext(resolvedRepoPath)
   : 'No repository context supplied.';
 
 const system = `You are BountyForge, a senior software-engineering planning agent.
@@ -57,16 +59,24 @@ if (!content) throw new Error('Nebius returned an empty response');
 
 const plan = JSON.parse(content);
 const verification = await verifyPlan(client, model, issue, repositoryContext, plan);
+const validation = resolvedRepoPath && verification.verdict === 'pass'
+  ? await validateRepository(resolvedRepoPath)
+  : null;
+
+const readyForExecution = verification.verdict === 'pass';
+const repositoryValidated = validation?.passed ?? false;
 
 console.log(JSON.stringify({
   provider: 'Nebius Token Factory',
   model,
-  repositoryContextIncluded: Boolean(repoPath),
+  repositoryContextIncluded: Boolean(resolvedRepoPath),
   plan,
   verification,
-  readyForExecution: verification.verdict === 'pass',
+  validation,
+  readyForExecution,
+  repositoryValidated,
 }, null, 2));
 
-if (verification.verdict !== 'pass') {
+if (!readyForExecution || (resolvedRepoPath && !repositoryValidated)) {
   process.exitCode = 2;
 }
