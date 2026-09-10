@@ -1,4 +1,6 @@
 import OpenAI from 'openai';
+import { resolve } from 'node:path';
+import { collectRepositoryContext } from './context.js';
 
 const apiKey = process.env.NEBIUS_API_KEY;
 if (!apiKey) {
@@ -11,13 +13,20 @@ const client = new OpenAI({
 });
 
 const model = process.env.NEBIUS_MODEL ?? 'nvidia/nemotron-3-super-120b-a12b';
-const issue = process.argv.slice(2).join(' ').trim();
+const args = process.argv.slice(2);
+const repoFlag = args.indexOf('--repo');
+const repoPath = repoFlag >= 0 ? args[repoFlag + 1] : undefined;
+const issue = args.filter((_, index) => index !== repoFlag && index !== repoFlag + 1).join(' ').trim();
 if (!issue) {
-  throw new Error('Pass a software issue description as the command argument');
+  throw new Error('Pass a software issue description; optionally add --repo <path>');
 }
 
+const repositoryContext = repoPath
+  ? await collectRepositoryContext(resolve(repoPath))
+  : 'No repository context supplied.';
+
 const system = `You are BountyForge, a senior software-engineering planning agent.
-Turn one software issue into an implementation plan that is specific, testable and honest about uncertainty.
+Turn one software issue plus bounded repository context into an implementation plan that is specific, testable and honest about uncertainty.
 Return JSON only with this exact shape:
 {
   "goal": string,
@@ -27,7 +36,7 @@ Return JSON only with this exact shape:
   "risks": string[],
   "estimatedComplexity": "low" | "medium" | "high"
 }
-Never invent repository facts that were not supplied. Put unknowns in risks.`;
+Never invent repository facts that were not supplied. Cite relevant repository file paths inside implementation steps when context supports them. Put unknowns in risks.`;
 
 const response = await client.chat.completions.create({
   model,
@@ -35,7 +44,10 @@ const response = await client.chat.completions.create({
   response_format: { type: 'json_object' },
   messages: [
     { role: 'system', content: system },
-    { role: 'user', content: issue },
+    {
+      role: 'user',
+      content: `ISSUE:\n${issue}\n\nREPOSITORY CONTEXT:\n${repositoryContext}`,
+    },
   ],
 });
 
@@ -43,4 +55,9 @@ const content = response.choices[0]?.message?.content;
 if (!content) throw new Error('Nebius returned an empty response');
 
 const parsed = JSON.parse(content);
-console.log(JSON.stringify({ provider: 'Nebius Token Factory', model, plan: parsed }, null, 2));
+console.log(JSON.stringify({
+  provider: 'Nebius Token Factory',
+  model,
+  repositoryContextIncluded: Boolean(repoPath),
+  plan: parsed,
+}, null, 2));
